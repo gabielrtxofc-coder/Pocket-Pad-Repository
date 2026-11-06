@@ -66,3 +66,34 @@ else()
 endif()
 
 target_include_directories(Mousedroid PRIVATE ./src)
+
+include(CTest)
+if(BUILD_TESTING)
+    find_package(Threads REQUIRED)
+
+    add_executable(AdbCoordinatorTests
+        tests/adb_coordinator_tests.cpp
+        src/adb/AdbCoordinator.cpp
+    )
+    target_include_directories(AdbCoordinatorTests PRIVATE ./src)
+    add_test(NAME adb_coordinator_fake_device_scenarios COMMAND AdbCoordinatorTests)
+
+    add_executable(AdbMonitorTests
+        tests/adb_monitor_tests.cpp
+        src/adb/AdbCoordinator.cpp
+        src/adb/AdbMonitor.cpp
+        src/adb/AdbProcess.cpp
+    )
+    target_include_directories(AdbMonitorTests PRIVATE ./src)
+    target_link_libraries(AdbMonitorTests PRIVATE Threads::Threads)
+    add_test(NAME adb_background_monitor_fake_device COMMAND AdbMonitorTests)
+
+    if(WIN32)
+        add_executable(AdbProcessTests
+            tests/adb_process_tests.cpp
+            src/adb/AdbProcess.cpp
+        )
+        target_include_directories(AdbProcessTests PRIVATE ./src)
+        add_test(NAME adb_windows_argument_safe_process COMMAND AdbProcessTests)
+    endif()
+endif()

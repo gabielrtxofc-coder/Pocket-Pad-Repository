@@ -134,7 +134,7 @@ jobs:
           cmake -S mousedroid/server -B $buildDir -G 'Visual Studio 17 2022' -A x64 "-DCMAKE_TOOLCHAIN_FILE=$toolchain" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
           if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
 
-      - name: Compile Windows x64 Release server
+      - name: Compile Windows x64 Release server and fake-ADB tests
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -151,6 +151,14 @@ jobs:
             }
             throw 'Windows Release compilation failed; see the error annotations for compiler diagnostics.'
           }
+
+      - name: Run fake-ADB coordinator and Windows process tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $buildDir = Join-Path $env:RUNNER_TEMP 'mousedroid-windows-build'
+          ctest --test-dir $buildDir -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'One or more fake-ADB tests failed.' }
 
       - name: Package server, runtime dependencies, and ADB
         shell: pwsh
@@ -209,21 +217,22 @@ jobs:
           Set-Content -LiteralPath (Join-Path $packageDir 'Start-Server.bat') -Value $launcherLines -Encoding ascii
 
           $readmeLines = @(
-            'POCKET PAD / MOUSEDROID - TEST BUILD ONLY',
+            'POCKET PAD / MOUSEDROID - TEST BUILD',
             '',
-            'Extract this folder to a location whose path has no spaces, then start Start-Server.bat.',
-            'This package is unsigned and is supplied for a controlled first test only.',
-            'The server and C++ libraries use static x64 runtime linkage; ADB support DLLs are bundled.',
+            'Extract the ZIP anywhere, including a folder path containing spaces. Start Start-Server.bat.',
+            'This package is unsigned. The server and C++ libraries use static x64 runtime linkage.',
             '',
-            'SAFETY: the server listens on all network interfaces and does not authenticate remote input.',
-            'Do not run it on public/shared Wi-Fi or any network with untrusted devices. Prefer USB/ADB',
-            'on a private, isolated connection with only this PC and the Galaxy A12. Do not open a',
-            'firewall/router port. If Windows Firewall asks about network access, do not allow public',
-            'network access. Close other Android/ADB tools first; closing Mousedroid may stop the global',
-            'ADB server used by those tools.',
+            'USB ONLY: enable Android USB debugging, connect the phone by cable, and accept Android''s',
+            'normal RSA authorization prompt. The Windows status shows no device, unauthorized, offline,',
+            'multiple-device selection, and reverse-forward status. Select a serial if more than one',
+            'authorized device is attached. Reconnect is automatic while the Android app is open.',
             '',
-            'ADB files are present both beside Mousedroid.exe and in the adb subfolder because this',
-            'source version uses both locations. Do not delete either copy.'
+            'SECURITY: TCP and UDP listeners bind only to 127.0.0.1. Wi-Fi server mode is disabled until',
+            'authenticated pairing is implemented. No firewall/router port is needed. Do not create a',
+            'firewall exception or disable Windows Defender. Closing Mousedroid leaves the shared ADB',
+            'server running so Android Studio and other ADB clients are not interrupted.',
+            '',
+            'ADB files are bundled beside Mousedroid.exe and in the adb subfolder for package compatibility.'
           )
           Set-Content -LiteralPath (Join-Path $packageDir 'README-TEST-ONLY.txt') -Value $readmeLines -Encoding ascii
 

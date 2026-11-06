@@ -3,7 +3,7 @@
 #include "wx/wxprec.h"
 
 #ifndef WX_PRECOMP
-    #include "wx/wx.h"
+#include "wx/wx.h"
 #endif
 
 #include "gui/wxmain.h"
@@ -11,22 +11,25 @@
 #include "settingsmanager.h"
 #include "logger.h"
 
-class wxApplication : public wxApp, public Server::ConnectionListener
-{
-    public:
-        wxApplication();
+class wxApplication : public wxApp, public Server::ConnectionListener {
+public:
+    wxApplication();
+    ~wxApplication() override;
 
-        virtual bool OnInit() override;
+    bool OnInit() override;
+    int OnExit() override;
 
-        virtual void OnDeviceConnected(std::string device) const override;
-        virtual void OnDeviceDisconnected(std::string device) const override;
-        
-    private:
-        wxMain *main_frame = nullptr;
-        Server *server = nullptr;
-        
-        INPUT_MANAGER inputManager;
-        SettingsManager settings;
+    void OnDeviceConnected(std::string device) override;
+    void OnDeviceDisconnected(std::string device) override;
+    void OnAdbStateChanged(const PocketPad::Adb::Snapshot& state) override;
 
-        void OnWindowCloseEvent(wxCloseEvent &evt);
+private:
+    wxMain* main_frame = nullptr;
+    Server* server = nullptr;
+
+    INPUT_MANAGER inputManager;
+    SettingsManager settings;
+
+    void OnWindowCloseEvent(wxCloseEvent& evt);
+    void UpdateDeviceList();
 };

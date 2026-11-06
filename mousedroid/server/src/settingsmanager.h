@@ -9,6 +9,9 @@
 #include "logger.h"
 
 #ifdef _WIN32
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
     #include "windows.h"
 #endif
 
@@ -26,11 +29,6 @@ class SettingsManager
         int GetMoveSensitivity();
         int GetScrollSensitivity();
 
-        void ADBOn();
-        void ADBOff();
-        bool ADBOnOff();
-        bool ADBState();
-
     private:
         std::ifstream fin;
         std::map<std::string, std::string> settings;
@@ -38,9 +36,7 @@ class SettingsManager
         bool bRunAtStartup;
         bool bMinToTaskbar;
 
-        bool bAdbStarted;
-
-        std::string GetFilePath();
+        std::wstring GetFilePath();
         void LoadConfigs();
         void SaveConfigs();
 };

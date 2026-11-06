@@ -101,7 +101,6 @@ class Input: Fragment() {
                 R.id.mode_disconnect -> {
                     closeSoftKeyboard()
                     connectionViewModel.disconnect()
-                    findNavController().navigateUp()
                 }
                 R.id.mode_change_layout -> {
                     showLayoutSelectorDialog(item)
@@ -116,13 +115,18 @@ class Input: Fragment() {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
                     connectionViewModel.state.collect {
+                        val status = binding.navigation
+                            .getHeaderView(0)
+                            .findViewById<TextView>(R.id.connectionStatus)
                         when (it) {
-                            is ConnectionViewModel.State.Connected -> {
-                                binding.navigation
-                                    .getHeaderView(0)
-                                    .findViewById<TextView>(R.id.connectionStatus)
-                                    .text = "Connected to ${it.hostName}"
-                            }
+                            is ConnectionViewModel.State.Connected ->
+                                status.text = "Connected to ${it.hostName}"
+                            is ConnectionViewModel.State.WaitingForUsb ->
+                                status.text = "Waiting for USB connection…"
+                            is ConnectionViewModel.State.Connecting ->
+                                status.text = "Connecting over USB…"
+                            is ConnectionViewModel.State.Retrying ->
+                                status.text = "USB interrupted — reconnecting…"
                             else -> {}
                         }
                     }
@@ -134,26 +138,22 @@ class Input: Fragment() {
                             is ConnectionViewModel.Event.NavigateToInput -> { }
                             is ConnectionViewModel.Event.NavigateToMain -> findNavController().popBackStack(R.id.mainFragment, false)
                             is ConnectionViewModel.Event.ConnectionDisconnected -> {
-                                val pview = showPopupDialog(R.layout.connection_disconnected_fragment)
-                                pview?.apply {
-                                    if(it.connectionMode == Connection.Mode.BLUETOOTH) {
-                                        findViewById<TextView>(R.id.subtitle).text = "Bluetooth connection to ${it.hostName} was terminated"
-                                        findViewById<TextView>(R.id.description).text = "Host device turned bluetooth off or disconnected this device"
-                                    } else {
-                                        findViewById<TextView>(R.id.subtitle).text = "${it.connectionMode.name} Connection to Mousedroid server was interrupted."
-                                        findViewById<TextView>(R.id.description).text = "Make sure the server is still ON and ADB/WIFI is active."
+                                if (it.connectionMode == Connection.Mode.BLUETOOTH) {
+                                    val pview = showPopupDialog(R.layout.connection_disconnected_fragment)
+                                    pview?.apply {
+                                        findViewById<TextView>(R.id.subtitle).text =
+                                            "Bluetooth connection to ${it.hostName} was terminated"
+                                        findViewById<TextView>(R.id.description).text =
+                                            "The host device turned Bluetooth off or disconnected this phone."
                                     }
                                 }
                             }
                             is ConnectionViewModel.Event.ConnectionFailed -> {
-                                val pview = showPopupDialog(R.layout.connection_failed_fragment)
-                                pview?.apply {
-                                    if(it.connectionMode == Connection.Mode.BLUETOOTH) {
+                                if (it.connectionMode == Connection.Mode.BLUETOOTH) {
+                                    val pview = showPopupDialog(R.layout.connection_failed_fragment)
+                                    pview?.apply {
                                         findViewById<TextView>(R.id.subtitle).text = "Bluetooth connection failed"
-                                        findViewById<TextView>(R.id.description).text = "Make sure the device is on"
-                                    } else {
-                                        findViewById<TextView>(R.id.subtitle).text = "Connection to Mousedroid server failed"
-                                        findViewById<TextView>(R.id.description).text = "To connect over WIFI make sure you are on the same network as the computer.\nTo connect over USB make sure ADB is on and debugging is enabled.\nMake sure Mousedroid server is allowed through the firewall. "
+                                        findViewById<TextView>(R.id.description).text = "Make sure the device is on and paired."
                                     }
                                 }
                             }
@@ -213,8 +213,4 @@ class Input: Fragment() {
         view?.clearFocus()
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        connectionViewModel.disconnect()
-    }
 }

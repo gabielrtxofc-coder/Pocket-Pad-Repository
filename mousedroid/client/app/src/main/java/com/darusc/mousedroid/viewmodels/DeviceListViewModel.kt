@@ -3,7 +3,6 @@ package com.darusc.mousedroid.viewmodels
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
-import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -85,9 +84,9 @@ class DeviceListViewModel(
 
     @RequiresApi(Build.VERSION_CODES.P)
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    fun onDeviceClick(context: Context, name: String, address: String) {
+    fun onDeviceClick(name: String, address: String) {
         if(mode == Connection.Mode.WIFI) {
-            val details = getDeviceDetails(context, Connection.Mode.WIFI)
+            val details = getDeviceDetails(Connection.Mode.WIFI)
             connectionManager.connectWIFI(address, 6969, details)
         } else {
             connectionManager.connectBluetooth(address)

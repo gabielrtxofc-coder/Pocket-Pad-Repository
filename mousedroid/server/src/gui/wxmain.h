@@ -9,7 +9,13 @@
 #include <wx/notebook.h>
 #include <wx/msgdlg.h>
 #include <wx/hyperlink.h>
+#include <wx/choice.h>
 
+#include <functional>
+#include <string>
+#include <vector>
+
+#include "adb/AdbCoordinator.h"
 #include "gui/wxdevicelist.h"
 #include "settingsmanager.h"
 #include "logger.h"
@@ -21,39 +27,42 @@
 #define SL_SCROLL 1004
 
 #define HOST_NAME_TXT 1010
-#define HOST_IP_TXT 1011
+#define HOST_CONNECTION_TXT 1011
 
-class wxMain: public wxFrame
-{
-    public:
-        wxDeviceList *wxdevlist = nullptr;
-        wxPanel *tab_log = nullptr;
-        wxButton *adbbutton = nullptr;
+class wxMain : public wxFrame {
+public:
+    wxDeviceList* wxdevlist = nullptr;
+    wxPanel* tab_log = nullptr;
+    SettingsManager& settings;
 
-        SettingsManager &settings;
+    wxMain(SettingsManager& settings);
+    ~wxMain();
 
-        wxMain(SettingsManager &_settings);
-        ~wxMain();
-    
-        void SetHostInfo(std::string _Hostname, std::string _IpAddress);
+    void SetHostInfo(std::string hostname, std::string listener);
+    void SetAdbState(const PocketPad::Adb::Snapshot& snapshot);
+    void SetAdbSelectionHandler(std::function<void(std::string)> handler);
 
-        void UpdateUI();
-        
-    private:
-        wxPanel *tab_status = nullptr;
-        wxPanel *tab_settings = nullptr;
-        wxNotebook *wxnotebook = nullptr;
-        wxMTaskbar *tb = nullptr;
-        
-        wxDECLARE_EVENT_TABLE();    
+private:
+    wxPanel* tab_status = nullptr;
+    wxPanel* tab_settings = nullptr;
+    wxNotebook* wxnotebook = nullptr;
+    wxMTaskbar* tb = nullptr;
+    wxStaticText* adbStatus = nullptr;
+    wxChoice* adbDeviceChoice = nullptr;
+    std::vector<std::string> adbChoiceSerials;
+    std::string preferredAdbSerial;
+    std::function<void(std::string)> adbSelectionHandler;
+    bool updatingAdbChoices = false;
 
-        void InitStatusTab();   
-        void InitLogTab();
-        void InitSettingsTab();
+    wxDECLARE_EVENT_TABLE();
 
-        void CheckboxCmdHandler(wxCommandEvent &evt);
-        void SliderCmdHandler(wxScrollEvent &evt);
+    void InitStatusTab();
+    void InitLogTab();
+    void InitSettingsTab();
 
-        void HideWindow(wxIconizeEvent &evt);
-        void CloseWindow(wxCloseEvent &evt);
+    void CheckboxCmdHandler(wxCommandEvent& evt);
+    void SliderCmdHandler(wxScrollEvent& evt);
+    void AdbChoiceHandler(wxCommandEvent& evt);
+
+    void HideWindow(wxIconizeEvent& evt);
 };

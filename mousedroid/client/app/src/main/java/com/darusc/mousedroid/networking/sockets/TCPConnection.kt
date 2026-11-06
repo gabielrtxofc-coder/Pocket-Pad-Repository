@@ -1,97 +1,182 @@
 package com.darusc.mousedroid.networking.sockets
 
+import android.os.SystemClock
 import android.util.Log
 import com.darusc.mousedroid.mkinput.InputEvent
 import com.darusc.mousedroid.networking.Connection
 import com.darusc.mousedroid.networking.toSocketReport
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Wrapper around a socket to manage the TCP connection
- * @param ipAddress Remote endpoint's IPv4 address
- * @param port Remote endpoint's port
- * @param listener The registered listener for callbacks
- */
+/** A bounded-connect-time TCP session with one reader and one heartbeat owner. */
 class TCPConnection(
     ipAddress: String,
     port: Int,
     private val isOverAdb: Boolean,
-    private val listener: Listener
+    private val listener: Listener,
 ) : Connection() {
 
-    private val TAG = "Mousedroid"
+    companion object {
+        private const val TAG = "Mousedroid"
+        private const val CONNECT_TIMEOUT_MS = 2_500
+        private const val READ_TIMEOUT_MS = 1_000
+        private const val HEARTBEAT_INTERVAL_MS = 4_000L
+        private const val HEARTBEAT_TIMEOUT_MS = 12_000L
+        private const val HEARTBEAT_BYTE: Byte = 0x00
+    }
 
-    override val maxPacketSize = 65472
+    override val maxPacketSize = 65_472
 
-    private var socket: Socket
-    private var outputStream: OutputStream? = null
-    private var inputStream: InputStream? = null
+    private val socket = Socket()
+    private val running = AtomicBoolean(false)
+    private val locallyClosed = AtomicBoolean(false)
+    private val disconnected = AtomicBoolean(false)
+    private val outputLock = Any()
+    private lateinit var outputStream: OutputStream
+    private lateinit var inputStream: InputStream
+    private var readerThread: Thread? = null
+    private var heartbeatThread: Thread? = null
+    @Volatile
+    private var lastHeartbeatResponse = SystemClock.elapsedRealtime()
 
-    private var thread: Thread
-    private val running = AtomicBoolean(true)
+    val isConnected: Boolean
+        get() = running.get() && socket.isConnected && !socket.isClosed && !disconnected.get()
 
     init {
         try {
-            socket = Socket(ipAddress, port)
-
+            socket.tcpNoDelay = true
+            socket.keepAlive = true
+            socket.connect(InetSocketAddress(ipAddress, port), CONNECT_TIMEOUT_MS)
+            socket.soTimeout = READ_TIMEOUT_MS
             outputStream = socket.getOutputStream()
             inputStream = socket.getInputStream()
+            running.set(true)
 
-            Log.d(TAG, "TCP Connected to $ipAddress:$port")
-
-            thread = Thread { startReceiveBytesLoop() }
-            thread.start()
-        } catch (e: Exception) {
+            readerThread = Thread({ receiveLoop() }, "PocketPad-TCP-reader").apply { isDaemon = true }
+            heartbeatThread = Thread({ heartbeatLoop() }, "PocketPad-TCP-heartbeat").apply { isDaemon = true }
+            readerThread?.start()
+            heartbeatThread?.start()
+            Log.d(TAG, "TCP connected to $ipAddress:$port")
+        } catch (error: Exception) {
+            running.set(false)
+            try {
+                socket.close()
+            } catch (_: Exception) {
+            }
             throw ConnectionFailedException("$ipAddress:$port")
         }
     }
 
     override fun send(event: InputEvent) {
-        val reportList = event.toSocketReport()
-        reportList.forEach {
-            socket.getOutputStream().write(it)
-            // Send data immediately and add a small delay, otherwise all bytes will be merged
-            // (fix for multiple keypress events for one character)
-            socket.getOutputStream().flush()
-            Thread.sleep(10)
+        event.toSocketReport().forEach { packet ->
+            if (packet.isNotEmpty()) write(packet)
         }
     }
 
     fun sendBytes(bytes: ByteArray) {
-        socket.getOutputStream().write(bytes)
+        write(bytes)
     }
 
-    private fun startReceiveBytesLoop() {
-        val buf = ByteArray(15)
+    private fun write(bytes: ByteArray) {
+        if (!isConnected) throw SocketException("TCP session is closed")
+        try {
+            synchronized(outputLock) {
+                if (!isConnected) throw SocketException("TCP session is closed")
+                outputStream.write(bytes)
+                outputStream.flush()
+            }
+        } catch (error: Exception) {
+            handleDisconnect()
+            throw error
+        }
+    }
+
+    private fun receiveLoop() {
+        val buffer = ByteArray(64)
         while (running.get()) {
             try {
-                val bytes = inputStream?.read(buf)
-                // When connected over ADB stream end of file might be reached
-                if(isOverAdb && bytes == -1) {
-                    onDisconnected()
-                    break
+                val count = inputStream.read(buffer)
+                if (count < 0) {
+                    handleDisconnect()
+                    return
                 }
-                listener.onBytesReceived(buf, bytes ?: 0)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error while reading. Closing socket. ${e.message}")
-                onDisconnected()
-                break
+                if (count == 0) continue
+                for (index in 0 until count) {
+                    if (buffer[index] == HEARTBEAT_BYTE) {
+                        lastHeartbeatResponse = SystemClock.elapsedRealtime()
+                    }
+                }
+                listener.onBytesReceived(buffer.copyOf(count), count)
+            } catch (_: SocketTimeoutException) {
+                if (SystemClock.elapsedRealtime() - lastHeartbeatResponse >= HEARTBEAT_TIMEOUT_MS) {
+                    handleDisconnect()
+                    return
+                }
+            } catch (error: Exception) {
+                if (running.get() && !locallyClosed.get()) {
+                    Log.w(TAG, "TCP receive ended: ${error.message}")
+                    handleDisconnect()
+                }
+                return
             }
         }
     }
 
-    override fun close() {
-        running.set(false)
-        socket.close()
-        thread.join()
+    private fun heartbeatLoop() {
+        while (running.get()) {
+            try {
+                Thread.sleep(HEARTBEAT_INTERVAL_MS)
+            } catch (_: InterruptedException) {
+                return
+            }
+            if (!running.get()) return
+            if (SystemClock.elapsedRealtime() - lastHeartbeatResponse >= HEARTBEAT_TIMEOUT_MS) {
+                handleDisconnect()
+                return
+            }
+            try {
+                write(byteArrayOf(HEARTBEAT_BYTE))
+            } catch (_: Exception) {
+                return
+            }
+        }
     }
 
-    private fun onDisconnected() {
-        val host = socket.inetAddress.hostAddress ?: "x.x.x.x"
-        val mode = if (host == "127.0.0.1") Mode.USB else Mode.WIFI
+    private fun handleDisconnect() {
+        if (locallyClosed.get() || !disconnected.compareAndSet(false, true)) return
+        running.set(false)
+        try {
+            socket.close()
+        } catch (_: Exception) {
+        }
+        val host = if (isOverAdb) "127.0.0.1" else (socket.inetAddress?.hostAddress ?: "x.x.x.x")
+        val mode = if (isOverAdb) Mode.USB else Mode.WIFI
         listener.onDisconnected(mode, host)
+    }
+
+    override fun close() {
+        locallyClosed.set(true)
+        running.set(false)
+        try {
+            socket.close()
+        } catch (_: Exception) {
+        }
+        heartbeatThread?.interrupt()
+        joinUnlessCurrent(readerThread)
+        joinUnlessCurrent(heartbeatThread)
+    }
+
+    private fun joinUnlessCurrent(thread: Thread?) {
+        if (thread == null || thread === Thread.currentThread()) return
+        try {
+            thread.join(1_500L)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
     }
 }

@@ -13,6 +13,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.PopupWindow
 import android.widget.TextView
+import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -92,7 +93,7 @@ class DeviceList : Fragment() {
             @RequiresApi(Build.VERSION_CODES.P)
             @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
             override fun onItemClick(name: String, address: String) {
-                deviceListViewModel.onDeviceClick(requireContext(), name, address)
+                deviceListViewModel.onDeviceClick(name, address)
             }
         })
         binding.recyclerView.adapter = deviceAdapter
@@ -102,8 +103,12 @@ class DeviceList : Fragment() {
         // Make the add device button visible only if fragment
         // was created to display wifi devices otherwise keep it hidden
         if(connectionMode == Connection.Mode.WIFI) {
-            binding.btnAddDevice.setOnClickListener { showAddDeviceDialog() }
-            binding.btnAddDevice.visibility = View.VISIBLE
+            binding.btnAddDevice.visibility = View.GONE
+            Toast.makeText(
+                requireContext(),
+                "Wi-Fi mode is disabled until authenticated pairing is implemented.",
+                Toast.LENGTH_LONG,
+            ).show()
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -125,7 +130,10 @@ class DeviceList : Fragment() {
                                     loadingPopup.showAtLocation(binding.root, Gravity.CENTER, 0, 0)
                                 }
                             }
-                            is ConnectionViewModel.State.Idle -> loadingPopup.dismiss()
+                            is ConnectionViewModel.State.Idle,
+                            is ConnectionViewModel.State.UsbPaused,
+                            is ConnectionViewModel.State.WaitingForUsb,
+                            is ConnectionViewModel.State.Retrying,
                             is ConnectionViewModel.State.Connected -> loadingPopup.dismiss()
                         }
                     }
@@ -138,6 +146,11 @@ class DeviceList : Fragment() {
                             is ConnectionViewModel.Event.NavigateToMain -> findNavController().popBackStack(R.id.mainFragment, false)
                             is ConnectionViewModel.Event.ConnectionDisconnected -> showPopupDialog(R.layout.connection_disconnected_fragment)
                             is ConnectionViewModel.Event.ConnectionFailed -> showPopupDialog(R.layout.connection_failed_fragment)
+                            is ConnectionViewModel.Event.WifiModeDisabled -> Toast.makeText(
+                                requireContext(),
+                                "Wi-Fi mode is disabled until authenticated pairing is implemented.",
+                                Toast.LENGTH_LONG,
+                            ).show()
                             else -> { }
                         }
                     }
