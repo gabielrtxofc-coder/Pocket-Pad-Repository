@@ -72,10 +72,20 @@ jobs:
           set -euo pipefail
           apk='app/build/outputs/apk/debug/app-debug.apk'
           test -s "$apk"
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -x "$aapt"
+          test -x "$apksigner"
+          metadata=$("$aapt" dump badging "$apk")
+          printf '%s\n' "$metadata" | grep -Fq "package: name='com.darusc.mousedroid'"
+          printf '%s\n' "$metadata" | grep -Fq "sdkVersion:'28'"
+          "$apksigner" verify --verbose "$apk"
           output="$RUNNER_TEMP/android-output"
           mkdir -p "$output"
           cp "$apk" "$output/Pocket-Pad-Android-Debug.apk"
-          (cd "$output" && sha256sum Pocket-Pad-Android-Debug.apk > Pocket-Pad-Android-Debug.apk.sha256)
+          (cd "$output" && sha256sum Pocket-Pad-Android-Debug.apk > Pocket-Pad-Android-Debug.apk.sha256 && sha256sum --check Pocket-Pad-Android-Debug.apk.sha256)
+          checksum=$(awk '{print $1}' "$output/Pocket-Pad-Android-Debug.apk.sha256")
+          echo "::notice title=Android APK SHA-256::$checksum"
         shell: bash
 
       - name: Upload Android Debug APK
@@ -230,6 +240,16 @@ jobs:
           if (-not (Test-Path -LiteralPath $zipPath) -or (Get-Item -LiteralPath $zipPath).Length -eq 0) { throw 'Windows package ZIP was not produced.' }
           $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  Pocket-Pad-Windows-Server.zip" | Set-Content -LiteralPath "$zipPath.sha256" -Encoding ascii
+          $checksumText = (Get-Content -LiteralPath "$zipPath.sha256" -Raw).Trim()
+          if ($checksumText -ne "$hash  Pocket-Pad-Windows-Server.zip") { throw 'Windows ZIP checksum verification failed.' }
+          $verifyDir = Join-Path $env:RUNNER_TEMP 'windows-zip-verification'
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $verifyDir -Force
+          foreach ($relativePath in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $verifyDir $relativePath) -PathType Leaf)) { throw "ZIP verification failed; missing: $relativePath" }
+          }
+          $verifiedHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($verifiedHash -ne $hash) { throw 'Windows ZIP changed after checksum generation.' }
+          Write-Output "::notice title=Windows ZIP SHA-256::$hash"
 
       - name: Upload Windows x64 Release ZIP
         if: success()
