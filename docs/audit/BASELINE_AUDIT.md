@@ -6,15 +6,15 @@
 **Destination:** [`gabielrtxofc-coder/Pocket-Pad-Repository`](https://github.com/gabielrtxofc-coder/Pocket-Pad-Repository)<br>
 **Destination branch used by this session:** `arena/877c740f-pocket-pad-repository`
 
-> **Scope and interpretation.** This is a baseline investigation, not a remediation. No Mousedroid production source was changed, no bug fix or feature was implemented, and no destructive installer, ADB, firewall, registry, or hardware test was run. “Confirmed” below means the defect is directly evident from the source or a dependency’s published affected-version range; it does **not** mean that Windows, Android hardware, or a desktop binary was run in this environment. Runtime findings are explicitly identified as untested.
+> **Scope and interpretation.** This report records the baseline investigation, not a general remediation. At the baseline audit commit, no Mousedroid production source was changed and no feature or refactor was implemented. A later Mission 02 build-preparation pass is recorded in section 13; its only production-source edit replaces a removed Asio address-parsing API with its behavior-equivalent successor for compilation. No installer, ADB command, firewall, router, registry, or hardware test was run. “Confirmed” below means the defect is directly evident from the source or a dependency’s published affected-version range; runtime findings are explicitly identified as untested.
 
 ## 1. Executive summary
 
 - The destination was not empty: it contained a single `README.md` and the original initial commit. The upstream project was therefore imported intact under **`mousedroid/`**, rather than replacing destination files. A Git subtree merge preserves the upstream master history as a parent; its split is exactly the source master commit listed above. The imported MIT license, original documentation, attribution, resources, build files, and binaries are present.
 - The destination’s default branch `main` was not changed. The source branches `master` and `bl` and tags `v1.0` through `v1.5`, plus `v1.5-beta`, are fetched in the local checkout under the `upstream` remote. `origin` points to the existing Pocket Pad repository and `upstream` to the official source.
 - The audit found **22 code- or advisory-confirmed findings**: **4 high, 16 medium, 2 low**. The most consequential are unauthenticated remote input on desktop TCP/UDP listeners; unsafe, unframed protocol parsing; the Windows/Linux ADB executable-path mismatch; and unhandled server startup errors. Five additional risks remain unverified and are not included in those counts.
-- The Android build, Android unit tests, desktop build, and CTest suite could not execute. The Gradle wrapper is not executable in Git, the available environment has no Java/JDK or Android SDK, and it has no CMake, wxWidgets, or standalone Asio headers. No Android device, Windows machine, desktop server binary, or ADB CLI is available here.
-- Two template Android tests exist (one trivial local arithmetic assertion and one app-context assertion); there are no desktop/protocol tests and no CI workflow in the imported tree. **Project tests actually executed: 0.** Static XML/JSON parsing and shell syntax checks did execute successfully.
+- During the initial local audit, Android builds/tests and desktop builds could not run: the wrapper lacked its execute bit, Java/JDK and Android SDK were absent, and CMake/wxWidgets/Asio headers were unavailable. The later GitHub Actions build results are recorded in section 13. No Galaxy A12, Windows runtime session, or ADB device authorization test was performed.
+- The imported baseline contains two template Android tests and no desktop/protocol tests or CI workflow. **During the initial local audit, project tests actually executed: 0.** The follow-up CI run later passed the Android unit-test and lint tasks; see section 13. Static XML/JSON parsing and shell syntax checks also passed in the initial audit.
 - GitHub reports about ADB startup, the Windows executable location, drag/drop, binding to port 6969, and interface selection were reviewed. Some are strongly corroborated by current code, but none was reproduced on the reported hardware/OS. The release-signing concern in issue #33 is a supply-chain warning, not a confirmed compromise.
 
 ### Finding counts
@@ -131,6 +131,8 @@ GitHub Advisory Database’s Maven package advisories were queried for the decla
 
 ## 5. Build, tests, and static checks
 
+The table below records the **initial local audit attempt**. Mission 02 later ran the Android and Windows builds in GitHub Actions; those results supersede the corresponding local-build status and are recorded in section 13.
+
 | Check | Command/approach | Result |
 |---|---|---|
 | Android unit-test task | `./gradlew testDebugUnitTest` | Could not start: `gradlew` is mode `100644` (not executable); direct invocation returned permission denied. Running `bash ./gradlew testDebugUnitTest` then stopped because no `java`/`JAVA_HOME` exists. **Not run.** |
@@ -144,7 +146,7 @@ GitHub Advisory Database’s Maven package advisories were queried for the decla
 | Resource syntax | Python XML parse for Android source resources; JSON parse for `CMakeSettings.json` | Parsed 67 Android XML files and the JSON file successfully. This is syntax validation, not Android resource linking. |
 | Static/dependency review | Source inspection, repository searches, GitHub Advisory Database | Findings documented below. No full Android Lint, C++ static analyzer, ShellCheck, or transitive dependency scanner was available/run. |
 
-**Test accounting:** automated project tests executed **0**, passed **0**, failed **0**. One Gradle test-task attempt was blocked before Gradle could start. Static XML/JSON parsing and shell syntax checks are reported separately above; they are not counted as project tests.
+**Initial local-audit test accounting:** automated project tests executed **0**, passed **0**, failed **0**; one Gradle test-task attempt was blocked before Gradle could start. The later CI test result is documented in section 13. Static XML/JSON parsing and shell syntax checks are reported separately above; they are not counted as project tests.
 
 ## 6. Confirmed findings (code/advisory evidence; runtime not reproduced here)
 
@@ -426,7 +428,7 @@ No physical Android, Galaxy A12, Windows host, paired Bluetooth adapter, USB cab
 7. **Cursor/sensitivity:** measure small/large deltas, direction, acceleration and clipping; compare Bluetooth vs Wi-Fi vs USB; move/scroll sliders through all values; test fresh launch with and without `config.ini`.
 8. **Windows behavior:** normal vs elevated applications (UIPI), lock screen, multi-monitor/rotation, suspend/resume, firewall policy, taskbar/tray, startup registry entry, shutdown/logoff while server is open, and resource usage over a long session.
 9. **Android lifecycle/battery:** rotate via the app fullscreen button and system rotation; background/foreground; screen off/on; low battery; repeated navigation/connect/disconnect; inspect memory and active threads with LeakCanary/Android Studio profiler; verify whether the app is expected to remain connected in background without a foreground service.
-10. **Packaging/build:** clean Windows CMake build and release package; install/launch package without developer tools; verify DLLs, ADB, icon, config path and settings persistence. On Linux, separately test `/dev/uinput` permissions, desktop launcher working directory, system ADB discovery, horizontal scroll, and suspend/resume.
+10. **Packaging/runtime:** the clean Windows x64 Release build and ZIP were compiled and package contents/checksum were verified in CI (section 13). Still pending: install/launch the ZIP on a real Windows host without developer tools; verify runtime DLL loading, ADB authorization/forwarding, icon, config path and settings persistence. On Linux, separately test `/dev/uinput` permissions, desktop launcher working directory, system ADB discovery, horizontal scroll, and suspend/resume.
 
 ## 11. Recommendations for a later remediation mission (not applied)
 
@@ -438,10 +440,38 @@ No physical Android, Galaxy A12, Windows host, paired Bluetooth adapter, USB cab
 6. Unify transport semantics for middle click, scroll, sensitivity, and zoom; preserve small deltas and correct platform-axis mappings.
 7. Add validated config defaults and executable-relative/user-data path resolution; repair Windows/Linux package layouts and test clean distributions.
 8. Resolve the Kotlin Gradle plugin advisory and establish dependency locking/SBOM/advisory scans; verify release signing/reproducibility with the upstream maintainers before distributing builds.
-9. Add CI for Android build, Android unit/instrumentation tests, lint, Linux and Windows CMake builds, and desktop protocol tests. Keep generated `.gradle`/`.idea` state and local SDK paths out of source control.
+9. Extend the Mission 02 CI workflow with Android instrumentation tests, Linux CMake builds, and desktop protocol tests. Keep generated `.gradle`/`.idea` state and local SDK paths out of source control.
 
 ## 12. Baseline conclusion
 
 Mousedroid is a compact, understandable cross-platform prototype with a clear separation between Android client, socket/HID transports, and native desktop input backends. The original repository carries its MIT license and project history, and the import has preserved that history without rewriting the destination’s existing commit.
 
-The current source is **not yet a safe or reliable Pocket Pad baseline for immediate feature development**. In particular, network input is unauthenticated, parser bounds/framing are inadequate, ADB packaging/path handling appears broken on the documented layouts, and the Windows build/release configuration has unresolved path mismatches. Gesture and connection lifecycle behavior also needs hardware validation. The Android build and desktop server build remain unverified in this environment; no USB, Bluetooth, Wi-Fi cursor, gesture, reconnection, or Windows runtime behavior should be described as validated until the manual/CI checks above pass.
+The current source is **not yet a safe or reliable Pocket Pad baseline for immediate feature development**. In particular, network input is unauthenticated, parser bounds/framing are inadequate, ADB packaging/path handling appears broken on the upstream documented layouts, and the original release script has unresolved path mismatches. Gesture and connection lifecycle behavior also needs hardware validation. The later CI build pass verifies compilation and package contents only; no USB, Bluetooth, Wi-Fi cursor, gesture, reconnection, or Windows runtime behavior has been validated. Do not treat the build pass as a security assessment or as permission to use the server on untrusted networks.
+
+## 13. Follow-up: Mission 02 build preparation and results
+
+This addendum records the build-preparation work after the baseline audit. It does not change the baseline finding counts or mean that the manual Galaxy A12/Windows tests were performed.
+
+### Preparation changes
+
+- Restored `mousedroid/client/gradlew` to executable Git mode `100755`.
+- Removed the tracked machine-specific `mousedroid/client/local.properties` (it contained a developer’s Windows SDK path) and added `local.properties` to the Android project’s `.gitignore`. CI resolves the SDK from its environment.
+- Added `.github/workflows/baseline-build.yml` on the fixed Arena branch. The workflow runs Android unit tests, lint and `assembleDebug`; it builds the desktop server as Windows x64 Release and uploads artifacts only when each respective job succeeds.
+- The first actual Windows compile found that the pinned current Asio package no longer provides `asio::ip::address::from_string`. At `mousedroid/server/src/net/server.cpp:35`, the call was replaced with `asio::ip::make_address("8.8.8.8")`. This is a compile-compatibility change using the same literal address and port 80 route probe; it does not add a feature or change the intended network behavior.
+- The Windows job uses pinned vcpkg revision `054bd01bec7f31492ec9ac063740cc984a0fe59e` and the `x64-windows-static` triplet, so the C++ libraries/runtime are statically linked. The package includes a launcher, config, server executable, ADB executable and its support DLLs in the locations expected by this source version.
+- C-05 was corrected after reviewing the complete CMake file: the earlier resource setting is overwritten before `add_executable()`. The resource file is omitted; the wrong earlier path is not itself a C++ compilation blocker. This finding is medium severity and describes the resource omission, not a failed Windows build.
+
+### Successful GitHub Actions run
+
+- **Run:** [Pocket Pad baseline build artifacts — run 42183313698](https://github.com/gabielrtxofc-coder/Pocket-Pad-Repository/actions/runs/42183313698)
+- **Build commit:** `5785ce2c76ac1446734a849545635436dc484d78` on `arena/877c740f-pocket-pad-repository`.
+- **Android:** `testDebugUnitTest`, `lintDebug`, and `assembleDebug` all passed. CI verified the APK package name `com.darusc.mousedroid`, minimum SDK 28, APK signature, and SHA-256.
+- **Windows:** CMake configuration, Windows x64 Release compilation, ZIP packaging, extraction/content checks and SHA-256 verification all passed. The server executable was **not launched** by CI.
+- **Artifacts:** `Pocket-Pad-Android-Debug.apk` and `Pocket-Pad-Windows-Server.zip`, each with a `.sha256` sidecar, are downloadable from the run’s **Artifacts** section. The GitHub Actions artifacts expire after 30 days (on **2026-12-06**). The hashes below are for the APK and the actual Windows server ZIP, not the outer ZIP envelope GitHub uses to download an artifact.
+
+| Payload | SHA-256 |
+|---|---|
+| `Pocket-Pad-Android-Debug.apk` | `163e5f7a73f1dd47027374fd7ccb10dc2b0bbb32e3bc04ceea3f4a621a7d7878` |
+| `Pocket-Pad-Windows-Server.zip` | `4dba4d1b68d6df475ed1cc0da2076cd2542ce4a10d8300120a826e88f0fe795d` |
+
+No generated APK/ZIP was committed to the source tree. No APK was installed on a phone and no desktop server was run on a network. The server’s unauthenticated listeners and the other security findings above remain unchanged; use the first-test guide’s isolated USB precautions.
