@@ -35,6 +35,6 @@ V1 replaces that flow with an asynchronous ADB monitor and explicit serial selec
 
 ## Verification status
 
-- **Passed locally:** strict `g++ -std=c++17 -Wall -Wextra -Werror -pedantic -pthread` build/run of 17 fake-ADB coordinator scenarios and the asynchronous monitor test; `git diff --check`.
-- **Pending CI:** Android Gradle unit tests/lint/APK build and Windows CMake/Release build, Windows process-path test, CTest, and ZIP packaging. Mission artifact links and SHA-256 values must be entered in the first-test guide only after successful CI artifact creation and verification.
+- **Passed locally:** strict `g++ -std=c++17 -Wall -Wextra -Werror -pedantic -pthread` build/run of 17 fake-ADB coordinator scenarios and the asynchronous monitor test; `git diff --check`; main Android layout XML parsing.
+- **Passed in CI:** [run 42224403618](https://github.com/gabielrtxofc-coder/Pocket-Pad-Repository/actions/runs/42224403618) built/tests/linted the Android app, produced the Debug APK, compiled the Windows x64 Release server and tests, passed CTest (including the Windows process-path case), and packaged the Windows ZIP. The workflow computed and checked the sidecar hashes before upload: Android APK `bfe2a0a971d09adffe4cbf5b0bdc07e7dca27c82e1fb933d7ebbe04cfcd3c5f2`; Windows ZIP `d672408b7ab142f8688363872d9f9d1f8baec292359bc4b18c3906b78e9069a5`.
 - **Not performed:** live-device ADB integration, Windows GUI launch, Wi-Fi exposure scan, physical cable loss/reconnect, or Galaxy A12 validation. Automated fake tests do not replace those manual checks.

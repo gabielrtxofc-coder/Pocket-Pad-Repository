@@ -21,8 +21,8 @@
 
 | Arquivo | SHA-256 |
 |---|---|
-| `Pocket-Pad-Android-Debug.apk` | **será preenchido após o primeiro build desta missão** |
-| `Pocket-Pad-Windows-Server.zip` | **será preenchido após o primeiro build desta missão** |
+| `Pocket-Pad-Android-Debug.apk` | `bfe2a0a971d09adffe4cbf5b0bdc07e7dca27c82e1fb933d7ebbe04cfcd3c5f2` |
+| `Pocket-Pad-Windows-Server.zip` | `d672408b7ab142f8688363872d9f9d1f8baec292359bc4b18c3906b78e9069a5` |
 
 No Windows, abra PowerShell na pasta correspondente e execute:
 
@@ -79,4 +79,7 @@ Compare o campo `Hash` com a tabela e com os sidecars `.sha256`.
 
 ## Build atual
 
-**Será atualizado com o link e os hashes do primeiro run bem-sucedido desta implementação.**
+- **GitHub Actions:** [run 42224403618 — todos os jobs aprovados](https://github.com/gabielrtxofc-coder/Pocket-Pad-Repository/actions/runs/42224403618)
+- **Commit validado:** `4562fbbaff11fe95012193195cdb404b773faa0b`
+- **Artefatos:** `Pocket-Pad-Android-Debug.apk` e `Pocket-Pad-Windows-Server.zip` (com seus sidecars `.sha256`); retenção até **6 de dezembro de 2026**.
+- Os dois jobs computaram e conferiram os hashes antes de enviar os artefatos. O job Windows também extraiu e verificou a estrutura do ZIP.
