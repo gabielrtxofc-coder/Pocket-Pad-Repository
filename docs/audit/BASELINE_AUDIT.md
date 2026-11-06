@@ -12,7 +12,7 @@
 
 - The destination was not empty: it contained a single `README.md` and the original initial commit. The upstream project was therefore imported intact under **`mousedroid/`**, rather than replacing destination files. A Git subtree merge preserves the upstream master history as a parent; its split is exactly the source master commit listed above. The imported MIT license, original documentation, attribution, resources, build files, and binaries are present.
 - The destination’s default branch `main` was not changed. The source branches `master` and `bl` and tags `v1.0` through `v1.5`, plus `v1.5-beta`, are fetched in the local checkout under the `upstream` remote. `origin` points to the existing Pocket Pad repository and `upstream` to the official source.
-- The audit found **22 code- or advisory-confirmed findings**: **5 high, 15 medium, 2 low**. The most consequential are unauthenticated remote input on desktop TCP/UDP listeners; unsafe, unframed protocol parsing; the Windows/Linux ADB executable-path mismatch; unhandled server startup errors; and a Windows CMake resource-path mismatch. Five additional risks remain unverified and are not included in those counts.
+- The audit found **22 code- or advisory-confirmed findings**: **4 high, 16 medium, 2 low**. The most consequential are unauthenticated remote input on desktop TCP/UDP listeners; unsafe, unframed protocol parsing; the Windows/Linux ADB executable-path mismatch; and unhandled server startup errors. Five additional risks remain unverified and are not included in those counts.
 - The Android build, Android unit tests, desktop build, and CTest suite could not execute. The Gradle wrapper is not executable in Git, the available environment has no Java/JDK or Android SDK, and it has no CMake, wxWidgets, or standalone Asio headers. No Android device, Windows machine, desktop server binary, or ADB CLI is available here.
 - Two template Android tests exist (one trivial local arithmetic assertion and one app-context assertion); there are no desktop/protocol tests and no CI workflow in the imported tree. **Project tests actually executed: 0.** Static XML/JSON parsing and shell syntax checks did execute successfully.
 - GitHub reports about ADB startup, the Windows executable location, drag/drop, binding to port 6969, and interface selection were reviewed. Some are strongly corroborated by current code, but none was reproduced on the reported hardware/OS. The release-signing concern in issue #33 is a supply-chain warning, not a confirmed compromise.
@@ -21,8 +21,8 @@
 
 | Classification | Count | Notes |
 |---|---:|---|
-| High | 5 | Includes network exposure/parser safety, ADB startup, server startup, and Windows source-build configuration. |
-| Medium | 15 | Includes connection/gesture/platform behavior, build packaging, movement precision, and the Kotlin Gradle plugin advisory. |
+| High | 4 | Includes network exposure/parser safety, ADB startup, and server startup failures. |
+| Medium | 16 | Includes connection/gesture/platform behavior, Windows resource configuration, build packaging, movement precision, and the Kotlin Gradle plugin advisory. |
 | Low | 2 | Per-client native buffer leak and close-confirmation behavior. |
 | **Confirmed total** | **22** | Code/advisory evidence; not equivalent to hardware reproduction. |
 | Suspicions not counted above | 5 | Require runtime, lifecycle, concurrency, or gesture reproduction. |
@@ -190,15 +190,15 @@ For each item, “observed” describes the source path or advisory range unless
 - **Likely cause:** Socket setup and public-route probing are treated as infallible.
 - **Recommendation:** Handle each bind/route error, report the port and cause in UI/logs, allow graceful retry/port selection, and avoid requiring an external route just to display local host information.
 
-### C-05 — Windows CMake references resource files at the wrong paths — **HIGH / Windows source-build blocker**
+### C-05 — Windows resource-source selection is overwritten before target creation — **MEDIUM**
 
-- **Location/evidence:** `mousedroid/server/CMakeLists.txt:21-25` references `resource.rc` for MSVC and `resource.o` for non-MSVC Windows. The tracked resource is `mousedroid/server/res/resource.rc`; there is no `server/resource.rc` or tracked `resource.o`.
-- **Description:** The Windows source build references resource paths that do not exist at the declared locations. This is a high-confidence build-configuration defect; the Windows build could not be executed in this Linux environment.
-- **Reproduction steps:** Not run. Configure/build the desktop project with a Windows CMake generator after installing the documented dependencies; observe resource source resolution.
-- **Expected:** CMake compiles the tracked Windows resource file and completes the target.
-- **Observed:** CMakeLists names a different relative path from the tracked resource.
-- **Likely cause:** Resource file moved under `res/` without updating CMake references.
-- **Recommendation:** Reconcile resource paths and validate fresh MSVC and MinGW builds from a clean checkout in CI.
+- **Location/evidence:** `mousedroid/server/CMakeLists.txt:21-26` sets `PLATFORM_SRC` with `resource.rc`/`resource.o`, but lines 41-46 assign `PLATFORM_SRC` again to only the Windows input-manager `.cpp`. `add_executable()` at line 50 uses the later value, so the configured resource source is not passed to the target. The tracked resource is `mousedroid/server/res/resource.rc` and references `app.ico`.
+- **Description:** The Windows resource configuration is internally inconsistent and the `.rc` resource is omitted from the final target. This is not, by itself, evidence that C++ compilation fails; the Windows build was unavailable here, so the packaging/runtime impact remains unverified.
+- **Reproduction steps:** Not run. Configure/build with the original Windows generator and inspect generated sources/executable resources.
+- **Expected:** The intended Windows resource source is consistently selected and included in the target.
+- **Observed:** `PLATFORM_SRC` is overwritten before `add_executable()`, making the earlier resource path selection ineffective.
+- **Likely cause:** Platform source selection is duplicated in two CMake blocks.
+- **Recommendation:** Consolidate the platform source/resource selection and verify a clean MSVC build and executable metadata in CI.
 
 ### C-06 — Wi-Fi TCP EOF is not treated as a disconnect — **MEDIUM**
 
