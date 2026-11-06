@@ -19,10 +19,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -30,7 +30,25 @@ jobs:
           cache-dependency-path: mousedroid/client/**/*.gradle*
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        id: android_sdk
+        uses: android-actions/setup-android@v4.0.4
+        with:
+          cmdline-tools-version: "15859902"
+
+      - name: Diagnose Android SDK setup failure
+        if: failure() && steps.android_sdk.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::error title=Android SDK::ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+          echo "::error title=Android SDK::ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-<unset>}"
+          if command -v sdkmanager >/dev/null 2>&1; then
+            echo "::error title=Android SDK::sdkmanager=$(command -v sdkmanager)"
+          else
+            echo '::error title=Android SDK::sdkmanager is not on PATH'
+          fi
+          if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
+            find "$ANDROID_HOME" -maxdepth 3 -name sdkmanager -print -quit
+          fi
 
       - name: Install Android SDK components
         run: sdkmanager --install 'platform-tools' 'platforms;android-34' 'build-tools;35.0.0'
@@ -62,7 +80,7 @@ jobs:
 
       - name: Upload Android Debug APK
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Pocket-Pad-Android-Debug.apk
           path: ${{ runner.temp }}/android-output/*
@@ -74,7 +92,7 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Bootstrap pinned vcpkg and install dependencies
         shell: pwsh
@@ -111,8 +129,18 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $buildDir = Join-Path $env:RUNNER_TEMP 'mousedroid-windows-build'
-          cmake --build $buildDir --config Release --parallel
-          if ($LASTEXITCODE -ne 0) { throw 'Windows Release compilation failed.' }
+          $buildLog = Join-Path $env:RUNNER_TEMP 'mousedroid-windows-build.log'
+          cmake --build $buildDir --config Release --parallel 2>&1 | Tee-Object -FilePath $buildLog
+          $buildExitCode = $LASTEXITCODE
+          if ($buildExitCode -ne 0) {
+            $diagnostics = Get-Content -LiteralPath $buildLog | Where-Object { $_ -match 'error|fatal error|LNK[0-9]+|CMake Error|FAILED' } | Select-Object -Last 25
+            if (-not $diagnostics) { $diagnostics = Get-Content -LiteralPath $buildLog | Select-Object -Last 25 }
+            foreach ($line in $diagnostics) {
+              $escaped = $line.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=Windows build diagnostic::$escaped"
+            }
+            throw 'Windows Release compilation failed; see the error annotations for compiler diagnostics.'
+          }
 
       - name: Package server, runtime dependencies, and ADB
         shell: pwsh
@@ -205,7 +233,7 @@ jobs:
 
       - name: Upload Windows x64 Release ZIP
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Pocket-Pad-Windows-Server.zip
           path: |
