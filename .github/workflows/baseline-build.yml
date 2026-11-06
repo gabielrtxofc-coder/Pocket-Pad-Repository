@@ -156,6 +156,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          trap {
+            $failureLine = $_.InvocationInfo.ScriptLineNumber
+            $failureMessage = $_.Exception.Message
+            $escapedMessage = "$failureMessage (script line $failureLine)".Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Windows packaging exception::$escapedMessage"
+            exit 1
+          }
           $buildDir = Join-Path $env:RUNNER_TEMP 'mousedroid-windows-build'
           $packageDir = Join-Path $env:RUNNER_TEMP 'Pocket-Pad-Windows-Server'
           $outputDir = Join-Path $env:RUNNER_TEMP 'windows-output'
@@ -184,7 +191,8 @@ jobs:
           Copy-Item -LiteralPath $runtimeDlls.FullName -Destination $packageDir -Force
           if (-not (Get-ChildItem -LiteralPath $packageDir -Filter 'wx*.dll' -File)) { throw 'wxWidgets runtime DLLs are missing from the package.' }
 
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $programFilesX86 = [System.Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+          $vswhere = Join-Path $programFilesX86 'Microsoft Visual Studio/Installer/vswhere.exe'
           if (-not (Test-Path -LiteralPath $vswhere)) { throw 'Could not locate Visual Studio to collect the Microsoft C++ runtime.' }
           $vsInstall = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if ($LASTEXITCODE -ne 0 -or -not $vsInstall) { throw 'Could not locate the Visual Studio C++ toolchain.' }
@@ -196,39 +204,39 @@ jobs:
           if (-not $crtDlls) { throw 'Could not find the x64 Microsoft Visual C++ runtime redistributable DLLs.' }
           Copy-Item -LiteralPath $crtDlls.FullName -Destination $packageDir -Force
 
-          $configText = @'
-          MINIMIZE_TASKBAR=0
-          MOVE_SENSITIVITY=10
-          RUN_STARTUP=0
-          SCROLL_SENSITIVITY=3
-          '@
-          Set-Content -LiteralPath (Join-Path $packageDir 'config.ini') -Value $configText -Encoding ascii
+          $configLines = @(
+            'MINIMIZE_TASKBAR=0',
+            'MOVE_SENSITIVITY=10',
+            'RUN_STARTUP=0',
+            'SCROLL_SENSITIVITY=3'
+          )
+          Set-Content -LiteralPath (Join-Path $packageDir 'config.ini') -Value $configLines -Encoding ascii
 
-          $launcherText = @'
-          @echo off
-          setlocal
-          cd /d "%~dp0"
-          start "" "%~dp0Mousedroid.exe"
-          '@
-          Set-Content -LiteralPath (Join-Path $packageDir 'Start-Server.bat') -Value $launcherText -Encoding ascii
+          $launcherLines = @(
+            '@echo off',
+            'setlocal',
+            'cd /d "%~dp0"',
+            'start "" "%~dp0Mousedroid.exe"'
+          )
+          Set-Content -LiteralPath (Join-Path $packageDir 'Start-Server.bat') -Value $launcherLines -Encoding ascii
 
-          $readmeText = @'
-          POCKET PAD / MOUSEDROID — TEST BUILD ONLY
-
-          Extract this folder to a location whose path has no spaces, then start Start-Server.bat.
-          This package is unsigned and is supplied for a controlled first test only.
-
-          SAFETY: the server listens on all network interfaces and does not authenticate remote input.
-          Do not run it on public/shared Wi-Fi or any network with untrusted devices. Prefer USB/ADB
-          on a private, isolated connection with only this PC and the Galaxy A12. Do not open a
-          firewall/router port. If Windows Firewall asks about network access, do not allow public
-          network access. Close other Android/ADB tools first; closing Mousedroid may stop the global
-          ADB server used by those tools.
-
-          ADB files are present both beside Mousedroid.exe and in the adb subfolder because this
-          source version uses both locations. Do not delete either copy.
-          '@
-          Set-Content -LiteralPath (Join-Path $packageDir 'README-TEST-ONLY.txt') -Value $readmeText -Encoding ascii
+          $readmeLines = @(
+            'POCKET PAD / MOUSEDROID - TEST BUILD ONLY',
+            '',
+            'Extract this folder to a location whose path has no spaces, then start Start-Server.bat.',
+            'This package is unsigned and is supplied for a controlled first test only.',
+            '',
+            'SAFETY: the server listens on all network interfaces and does not authenticate remote input.',
+            'Do not run it on public/shared Wi-Fi or any network with untrusted devices. Prefer USB/ADB',
+            'on a private, isolated connection with only this PC and the Galaxy A12. Do not open a',
+            'firewall/router port. If Windows Firewall asks about network access, do not allow public',
+            'network access. Close other Android/ADB tools first; closing Mousedroid may stop the global',
+            'ADB server used by those tools.',
+            '',
+            'ADB files are present both beside Mousedroid.exe and in the adb subfolder because this',
+            'source version uses both locations. Do not delete either copy.'
+          )
+          Set-Content -LiteralPath (Join-Path $packageDir 'README-TEST-ONLY.txt') -Value $readmeLines -Encoding ascii
 
           $required = @('Mousedroid.exe', 'config.ini', 'Start-Server.bat', 'adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll', 'adb/adb.exe', 'adb/AdbWinApi.dll', 'adb/AdbWinUsbApi.dll')
           foreach ($relativePath in $required) {
