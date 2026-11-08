@@ -127,8 +127,15 @@ jobs:
             git -C $vcpkgRoot checkout --detach $vcpkgCommit
             if ($LASTEXITCODE -ne 0) { throw 'Could not select the pinned vcpkg revision.' }
             $phase = "bootstrap vcpkg"
-            & (Join-Path $vcpkgRoot 'bootstrap-vcpkg.bat') -disableMetrics
-            if ($LASTEXITCODE -ne 0) { throw 'vcpkg bootstrap failed.' }
+            $bootstrapLog = Join-Path $env:RUNNER_TEMP 'vcpkg-bootstrap.log'
+            & (Join-Path $vcpkgRoot 'bootstrap-vcpkg.bat') -disableMetrics 2>&1 | Tee-Object -FilePath $bootstrapLog
+            $bootstrapExit = $LASTEXITCODE
+            if ($bootstrapExit -ne 0) {
+              $lastLines = (Get-Content -LiteralPath $bootstrapLog | Select-Object -Last 12) -join ' | '
+              $escaped = $lastLines.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=vcpkg bootstrap output::$escaped"
+              throw "vcpkg bootstrap failed with exit code $bootstrapExit."
+            }
             $phase = "install asio and wxwidgets"
             & (Join-Path $vcpkgRoot 'vcpkg.exe') install asio:x64-windows-static wxwidgets:x64-windows-static
             if ($LASTEXITCODE -ne 0) { throw 'vcpkg dependency installation failed.' }
