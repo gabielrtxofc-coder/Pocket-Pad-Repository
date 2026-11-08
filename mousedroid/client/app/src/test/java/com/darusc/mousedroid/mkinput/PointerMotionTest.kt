@@ -24,7 +24,7 @@ class PointerMotionTest {
     }
     @Test fun largeDeltasAreNotLostWhenClamped() {
         val motion = PointerMotion()
-        assertEquals(127 to -127, motion.move(200f, -200f, 16, 1f, 0f))
-        assertEquals(73 to -73, motion.move(0f, 0f, 16, 1f, 0f))
+        assertEquals(200 to -200, motion.move(200f, -200f, 16, 1f, 0f))
+        assertEquals(-10 to 10, motion.move(-10f, 10f, 16, 1f, 0f))
     }
 }

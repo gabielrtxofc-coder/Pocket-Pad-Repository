@@ -14,8 +14,8 @@ internal class PointerMotion {
         val gain = sensitivity * (1f + acceleration * (speed / 2f).coerceIn(0f, 1f))
         remainderX += dx * gain
         remainderY += dy * gain
-        val x = remainderX.toInt().coerceIn(-127, 127)
-        val y = remainderY.toInt().coerceIn(-127, 127)
+        val x = remainderX.toInt()
+        val y = remainderY.toInt()
         remainderX -= x
         remainderY -= y
         return x to y

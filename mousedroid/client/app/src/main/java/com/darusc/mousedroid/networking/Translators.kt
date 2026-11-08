@@ -70,13 +70,9 @@ fun InputEvent.toHIDReport(): Array<HIDReport> {
     Log.d("Mousedroid", this::class.java.toString())
     return when (this) {
         is InputEvent.MouseMove -> {
-            val report = MouseReport(
-                getMouseButtonHIDCode(this.button),
-                (-this.dx).toByte(),
-                (-this.dy).toByte(),
-                0
-            )
-            arrayOf(report)
+            splitMouseMovement(dx, dy).map<Pair<Int, Int>, HIDReport> { (x, y) ->
+                MouseReport(getMouseButtonHIDCode(button), (-x).toByte(), (-y).toByte(), 0)
+            }.toTypedArray()
         }
 
         is InputEvent.MouseClick -> {
@@ -159,7 +155,7 @@ private fun socketReport(vararg bytes: Byte): Array<ByteArray> {
 fun InputEvent.toSocketReport(): Array<ByteArray> {
     return when (this) {
         is InputEvent.MouseMove -> {
-            socketReport(RawSocketEvents.MOVE, this.dx.toByte(), this.dy.toByte())
+            splitMouseMovement(dx, dy).map { (x, y) -> byteArrayOf(RawSocketEvents.MOVE, x.toByte(), y.toByte()) }.toTypedArray()
         }
 
         is InputEvent.MouseScroll -> {
@@ -204,4 +200,15 @@ fun InputEvent.toSocketReport(): Array<ByteArray> {
 
         is InputEvent.BatteryEvent -> { socketReport() }
     }
+}
+/** Split one logical move into byte-sized reports without carrying whole pixels into a later gesture. */
+internal fun splitMouseMovement(dx: Int, dy: Int): List<Pair<Int, Int>> {
+    var x = dx; var y = dy
+    val parts = mutableListOf<Pair<Int, Int>>()
+    while (x != 0 || y != 0) {
+        val partX = x.coerceIn(-127, 127); val partY = y.coerceIn(-127, 127)
+        parts.add(partX to partY)
+        x -= partX; y -= partY
+    }
+    return parts
 }
