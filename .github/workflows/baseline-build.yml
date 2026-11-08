@@ -1,0 +1,297 @@
+name: Pocket Pad baseline build artifacts
+
+on:
+  push:
+    branches:
+      - arena/877c740f-pocket-pad-repository
+      - arena/f051f6d9-pocket-pad-repository
+    paths:
+      - ".github/workflows/baseline-build.yml"
+      - "mousedroid/client/**"
+      - "mousedroid/server/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-debug:
+    name: Android Debug APK, tests, and lint
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: mousedroid/client/**/*.gradle*
+
+      - name: Set up Android SDK
+        id: android_sdk
+        uses: android-actions/setup-android@v4.0.4
+        with:
+          cmdline-tools-version: "15859902"
+
+      - name: Diagnose Android SDK setup failure
+        if: failure() && steps.android_sdk.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::error title=Android SDK::ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+          echo "::error title=Android SDK::ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-<unset>}"
+          if command -v sdkmanager >/dev/null 2>&1; then
+            echo "::error title=Android SDK::sdkmanager=$(command -v sdkmanager)"
+          else
+            echo '::error title=Android SDK::sdkmanager is not on PATH'
+          fi
+          if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ]; then
+            find "$ANDROID_HOME" -maxdepth 3 -name sdkmanager -print -quit
+          fi
+
+      - name: Install Android SDK components
+        run: sdkmanager --install 'platform-tools' 'platforms;android-34' 'build-tools;35.0.0'
+        shell: bash
+
+      - name: Verify portable Gradle setup
+        working-directory: mousedroid/client
+        run: |
+          test -x ./gradlew
+          test ! -e local.properties
+        shell: bash
+
+      - name: Run Android unit tests and lint, then build Debug APK
+        working-directory: mousedroid/client
+        run: ./gradlew --no-daemon --stacktrace clean testDebugUnitTest lintDebug assembleDebug
+        shell: bash
+
+      - name: Stage APK and SHA-256 checksum
+        working-directory: mousedroid/client
+        run: |
+          set -euo pipefail
+          apk='app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$apk"
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -x "$aapt"
+          test -x "$apksigner"
+          metadata=$("$aapt" dump badging "$apk")
+          printf '%s\n' "$metadata" | grep -Fq "package: name='com.darusc.mousedroid'"
+          printf '%s\n' "$metadata" | grep -Fq "sdkVersion:'28'"
+          "$apksigner" verify --verbose "$apk"
+          output="$RUNNER_TEMP/android-output"
+          mkdir -p "$output"
+          cp "$apk" "$output/Pocket-Pad-Android-Debug.apk"
+          (cd "$output" && sha256sum Pocket-Pad-Android-Debug.apk > Pocket-Pad-Android-Debug.apk.sha256 && sha256sum --check Pocket-Pad-Android-Debug.apk.sha256)
+          checksum=$(awk '{print $1}' "$output/Pocket-Pad-Android-Debug.apk.sha256")
+          echo "::notice title=Android APK SHA-256::$checksum"
+        shell: bash
+
+      - name: Upload Android Debug APK
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Pocket-Pad-Android-Debug.apk
+          path: ${{ runner.temp }}/android-output/*
+          if-no-files-found: error
+          retention-days: 30
+
+  windows-x64-release:
+    name: Windows x64 Release server ZIP
+    runs-on: windows-2022
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Bootstrap pinned vcpkg and install dependencies
+        shell: pwsh
+        run: |
+          $phase = "initialization"
+          try {
+            $ErrorActionPreference = 'Stop'
+            $vcpkgCommit = '054bd01bec7f31492ec9ac063740cc984a0fe59e'
+            $vcpkgRoot = Join-Path $env:RUNNER_TEMP 'vcpkg'
+            New-Item -ItemType Directory -Path $vcpkgRoot -Force | Out-Null
+            $phase = "git init"
+            git -C $vcpkgRoot init
+            if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the vcpkg checkout.' }
+            $phase = "git remote"
+            git -C $vcpkgRoot remote add origin https://github.com/microsoft/vcpkg.git
+            if ($LASTEXITCODE -ne 0) { throw 'Could not add the vcpkg remote.' }
+            $phase = "git fetch pinned revision"
+            git -C $vcpkgRoot fetch --depth 1 origin $vcpkgCommit
+            if ($LASTEXITCODE -ne 0) { throw 'Could not fetch the pinned vcpkg revision.' }
+            $phase = "git checkout"
+            git -C $vcpkgRoot checkout --detach $vcpkgCommit
+            if ($LASTEXITCODE -ne 0) { throw 'Could not select the pinned vcpkg revision.' }
+            $phase = "bootstrap vcpkg"
+            $bootstrapLog = Join-Path $env:RUNNER_TEMP 'vcpkg-bootstrap.log'
+            & (Join-Path $vcpkgRoot 'bootstrap-vcpkg.bat') -disableMetrics 2>&1 | Tee-Object -FilePath $bootstrapLog
+            $bootstrapExit = $LASTEXITCODE
+            if ($bootstrapExit -ne 0) {
+              $lastLines = (Get-Content -LiteralPath $bootstrapLog | Where-Object { $_ -match 'error|fail|download|http|403|429|TLS|denied|exception' } | Select-Object -First 20) -join ' | '
+              $escaped = $lastLines.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=vcpkg bootstrap output::$escaped"
+              throw "vcpkg bootstrap failed with exit code $bootstrapExit."
+            }
+            $phase = "install asio and wxwidgets"
+            $installLog = Join-Path $env:RUNNER_TEMP 'vcpkg-install.log'
+            & (Join-Path $vcpkgRoot 'vcpkg.exe') install asio:x64-windows-static wxwidgets:x64-windows-static 2>&1 | Tee-Object -FilePath $installLog
+            $installExit = $LASTEXITCODE
+            if ($installExit -ne 0) {
+              $diagnostics = (Get-Content -LiteralPath $installLog | Select-Object -Last 35) -join ' | '
+              $escaped = $diagnostics.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=vcpkg installation output::$escaped"
+              throw "vcpkg dependency installation failed with exit code $installExit."
+            }
+            "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } catch {
+            $message = "phase=$phase; error=$($_.Exception.Message)".Replace("%", "%25").Replace("`r", "%0D").Replace("`n", "%0A")
+            Write-Output "::error title=Windows vcpkg diagnostic::$message"
+            throw
+          }
+
+      - name: Configure Windows x64 Release build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $buildDir = Join-Path $env:RUNNER_TEMP 'mousedroid-windows-build'
+          $toolchain = Join-Path $env:VCPKG_ROOT 'scripts/buildsystems/vcpkg.cmake'
+          cmake -S mousedroid/server -B $buildDir -G 'Visual Studio 17 2022' -A x64 "-DCMAKE_TOOLCHAIN_FILE=$toolchain" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
+
+      - name: Compile Windows x64 Release server and fake-ADB tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $buildDir = Join-Path $env:RUNNER_TEMP 'mousedroid-windows-build'
+          $buildLog = Join-Path $env:RUNNER_TEMP 'mousedroid-windows-build.log'
+          cmake --build $buildDir --config Release --parallel 2>&1 | Tee-Object -FilePath $buildLog
+          $buildExitCode = $LASTEXITCODE
+          if ($buildExitCode -ne 0) {
+            $diagnostics = Get-Content -LiteralPath $buildLog | Where-Object { $_ -match 'error|fatal error|LNK[0-9]+|CMake Error|FAILED' } | Select-Object -Last 25
+            if (-not $diagnostics) { $diagnostics = Get-Content -LiteralPath $buildLog | Select-Object -Last 25 }
+            foreach ($line in $diagnostics) {
+              $escaped = $line.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=Windows build diagnostic::$escaped"
+            }
+            throw 'Windows Release compilation failed; see the error annotations for compiler diagnostics.'
+          }
+
+      - name: Run fake-ADB coordinator and Windows process tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $buildDir = Join-Path $env:RUNNER_TEMP 'mousedroid-windows-build'
+          ctest --test-dir $buildDir -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'One or more fake-ADB tests failed.' }
+
+      - name: Package server, runtime dependencies, and ADB
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          trap {
+            $failureLine = $_.InvocationInfo.ScriptLineNumber
+            $failureMessage = $_.Exception.Message
+            $escapedMessage = "$failureMessage (script line $failureLine)".Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Windows packaging exception::$escapedMessage"
+            exit 1
+          }
+          $buildDir = Join-Path $env:RUNNER_TEMP 'mousedroid-windows-build'
+          $packageDir = Join-Path $env:RUNNER_TEMP 'Pocket-Pad-Windows-Server'
+          $outputDir = Join-Path $env:RUNNER_TEMP 'windows-output'
+          $serverRoot = Join-Path $env:GITHUB_WORKSPACE 'mousedroid/server'
+          $exe = Get-ChildItem -Path $buildDir -Filter 'Mousedroid.exe' -Recurse -File | Select-Object -First 1
+          if (-not $exe -or $exe.Length -eq 0) { throw 'The Release executable was not produced.' }
+
+          New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $packageDir 'adb') -Force | Out-Null
+          New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+          Copy-Item -LiteralPath $exe.FullName -Destination (Join-Path $packageDir 'Mousedroid.exe')
+          Copy-Item -LiteralPath (Join-Path $serverRoot 'app.ico') -Destination $packageDir
+          Copy-Item -LiteralPath (Join-Path $serverRoot 'icon.png') -Destination $packageDir
+
+          $adbSource = Join-Path $serverRoot 'adb'
+          $adbFiles = Get-ChildItem -LiteralPath $adbSource -File
+          if (-not ($adbFiles | Where-Object { $_.Name -eq 'adb.exe' }) -or -not ($adbFiles | Where-Object { $_.Name -eq 'AdbWinApi.dll' }) -or -not ($adbFiles | Where-Object { $_.Name -eq 'AdbWinUsbApi.dll' })) {
+            throw 'The bundled Windows ADB executable or support DLLs are missing.'
+          }
+          Copy-Item -Path (Join-Path $adbSource '*') -Destination (Join-Path $packageDir 'adb') -Recurse -Force
+          Copy-Item -Path (Join-Path $adbSource '*') -Destination $packageDir -Recurse -Force
+
+          $vcpkgBin = Join-Path $env:VCPKG_ROOT 'installed/x64-windows-static/bin'
+          if (Test-Path -LiteralPath $vcpkgBin) {
+            $runtimeDlls = Get-ChildItem -LiteralPath $vcpkgBin -Filter '*.dll' -File -ErrorAction SilentlyContinue
+            if ($runtimeDlls) { Copy-Item -LiteralPath $runtimeDlls.FullName -Destination $packageDir -Force }
+          }
+          Write-Output '::notice title=Windows package::C++ libraries and runtime are built with the static x64-windows-static triplet.'
+
+          $configLines = @(
+            'MINIMIZE_TASKBAR=0',
+            'MOVE_SENSITIVITY=10',
+            'RUN_STARTUP=0',
+            'SCROLL_SENSITIVITY=3'
+          )
+          Set-Content -LiteralPath (Join-Path $packageDir 'config.ini') -Value $configLines -Encoding ascii
+
+          $launcherLines = @(
+            '@echo off',
+            'setlocal',
+            'cd /d "%~dp0"',
+            'start "" "%~dp0Mousedroid.exe"'
+          )
+          Set-Content -LiteralPath (Join-Path $packageDir 'Start-Server.bat') -Value $launcherLines -Encoding ascii
+
+          $readmeLines = @(
+            'POCKET PAD / MOUSEDROID - TEST BUILD',
+            '',
+            'Extract the ZIP anywhere, including a folder path containing spaces. Start Start-Server.bat.',
+            'This package is unsigned. The server and C++ libraries use static x64 runtime linkage.',
+            '',
+            'USB ONLY: enable Android USB debugging, connect the phone by cable, and accept Android''s',
+            'normal RSA authorization prompt. The Windows status shows no device, unauthorized, offline,',
+            'multiple-device selection, and reverse-forward status. Select a serial if more than one',
+            'authorized device is attached. Reconnect is automatic while the Android app is open.',
+            '',
+            'SECURITY: TCP and UDP listeners bind only to 127.0.0.1. Wi-Fi server mode is disabled until',
+            'authenticated pairing is implemented. No firewall/router port is needed. Do not create a',
+            'firewall exception or disable Windows Defender. Closing Mousedroid leaves the shared ADB',
+            'server running so Android Studio and other ADB clients are not interrupted.',
+            '',
+            'ADB files are bundled beside Mousedroid.exe and in the adb subfolder for package compatibility.'
+          )
+          Set-Content -LiteralPath (Join-Path $packageDir 'README-TEST-ONLY.txt') -Value $readmeLines -Encoding ascii
+
+          $required = @('Mousedroid.exe', 'config.ini', 'Start-Server.bat', 'adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll', 'adb/adb.exe', 'adb/AdbWinApi.dll', 'adb/AdbWinUsbApi.dll')
+          foreach ($relativePath in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $packageDir $relativePath) -PathType Leaf)) { throw "Required package file is missing: $relativePath" }
+          }
+
+          $zipPath = Join-Path $outputDir 'Pocket-Pad-Windows-Server.zip'
+          Compress-Archive -Path (Join-Path $packageDir '*') -DestinationPath $zipPath -Force
+          if (-not (Test-Path -LiteralPath $zipPath) -or (Get-Item -LiteralPath $zipPath).Length -eq 0) { throw 'Windows package ZIP was not produced.' }
+          $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Pocket-Pad-Windows-Server.zip" | Set-Content -LiteralPath "$zipPath.sha256" -Encoding ascii
+          $checksumText = (Get-Content -LiteralPath "$zipPath.sha256" -Raw).Trim()
+          if ($checksumText -ne "$hash  Pocket-Pad-Windows-Server.zip") { throw 'Windows ZIP checksum verification failed.' }
+          $verifyDir = Join-Path $env:RUNNER_TEMP 'windows-zip-verification'
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $verifyDir -Force
+          foreach ($relativePath in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $verifyDir $relativePath) -PathType Leaf)) { throw "ZIP verification failed; missing: $relativePath" }
+          }
+          $verifiedHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($verifiedHash -ne $hash) { throw 'Windows ZIP changed after checksum generation.' }
+          Write-Output "::notice title=Windows ZIP SHA-256::$hash"
+
+      - name: Upload Windows x64 Release ZIP
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Pocket-Pad-Windows-Server.zip
+          path: |
+            ${{ runner.temp }}/windows-output/Pocket-Pad-Windows-Server.zip
+            ${{ runner.temp }}/windows-output/Pocket-Pad-Windows-Server.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
