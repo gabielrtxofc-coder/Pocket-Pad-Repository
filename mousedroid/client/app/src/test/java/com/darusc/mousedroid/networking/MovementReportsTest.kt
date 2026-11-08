@@ -13,5 +13,9 @@ class MovementReportsTest {
         val socket = event.toSocketReport()
         assertEquals(parts.size, socket.size)
         assertEquals(parts, socket.map { it[1].toInt() to it[2].toInt() })
+        val hid = event.toHIDReport()
+        assertEquals(parts.size, hid.size)
+        assertTrue(hid.all { it.bytes[0].toInt() == 1 })
+        assertEquals(parts, hid.map { -it.bytes[1].toInt() to -it.bytes[2].toInt() })
     }
 }

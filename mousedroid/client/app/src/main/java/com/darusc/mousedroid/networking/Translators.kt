@@ -1,6 +1,5 @@
 package com.darusc.mousedroid.networking
 
-import android.util.Log
 import com.darusc.mousedroid.layouts.KeyboardLayout
 import com.darusc.mousedroid.layouts.Keycode
 import com.darusc.mousedroid.mkinput.InputEvent
@@ -67,7 +66,6 @@ private fun getMediaActionHIDBitmask(action: InputEvent.MediaAction): Short {
  * (e.g mouse click requires 2 reports -> one for pressing the button and one for releasing)
  */
 fun InputEvent.toHIDReport(): Array<HIDReport> {
-    Log.d("Mousedroid", this::class.java.toString())
     return when (this) {
         is InputEvent.MouseMove -> {
             splitMouseMovement(dx, dy).map<Pair<Int, Int>, HIDReport> { (x, y) ->
