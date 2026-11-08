@@ -19,3 +19,7 @@ Contra a base solicitada `d35c3cf`, a Missão 03 altera a tela do touchpad, seu 
 - Não há teste novo para demonstrar ausência de regressões de gestos simultâneos; sucesso do CI não equivale à conclusão dos critérios de experiência. Recomenda-se manter o PR em rascunho até resolver esses pontos e revisar também a base herdada.
 
 Nenhum merge foi feito ou autorizado. A revisão não declara a missão pronta para merge.
+
+## Atualização após correção do rótulo
+
+No commit `a363ef7`, o rótulo foi esclarecido. A execução [42465674887](https://github.com/gabielrtxofc-coder/Pocket-Pad-Repository/actions/runs/42465674887) para esse commit passou no Android e gerou um novo APK (SHA-256 anotado pelo CI: `e088f9b4eeddaf00af2811a0ffe5ec294551afc29a9baeeab32d92d35c8e63bb`). O Windows falhou na etapa **Bootstrap pinned vcpkg and install dependencies**, tanto na primeira tentativa quanto na reexecução do job. A anotação mostra apenas exit code 1; os logs detalhados continuam inacessíveis devido ao bloqueio de rede. Portanto não é possível identificar ou corrigir com segurança a causa. A execução anterior passou em ambos os jobs, mas não substitui um CI verde no código atual. Corrigir/diagnosticar essa falha é outro impedimento para merge.
