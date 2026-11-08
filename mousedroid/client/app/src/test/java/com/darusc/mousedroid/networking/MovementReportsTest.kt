@@ -18,4 +18,14 @@ class MovementReportsTest {
         assertTrue(hid.all { it.bytes[0].toInt() == 1 })
         assertEquals(parts, hid.map { -it.bytes[1].toInt() to -it.bytes[2].toInt() })
     }
+    @Test fun twoFingerScrollReachesUsbAndBluetooth() {
+        val vertical = InputEvent.MouseScroll(0, 10)
+        assertArrayEquals(byteArrayOf(6, 10), vertical.toSocketReport().single())
+        assertEquals(1, vertical.toHIDReport().single().bytes[3].toInt())
+        val horizontal = InputEvent.MouseScroll(-10, 0)
+        assertArrayEquals(byteArrayOf(8, -10), horizontal.toSocketReport().single())
+        val reports = horizontal.toHIDReport()
+        assertEquals(3, reports.size)
+        assertEquals(-1, reports[1].bytes[3].toInt())
+    }
 }
