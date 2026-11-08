@@ -1,5 +1,7 @@
 # Revisão de encerramento — Missão 03
 
+> Registro histórico. A revisão atualizada está em [REMEDIACAO_03_1.md](REMEDIACAO_03_1.md).
+
 ## CI e artefatos
 
 A execução [42459733027](https://github.com/gabielrtxofc-coder/Pocket-Pad-Repository/actions/runs/42459733027) concluiu com sucesso **ambos** os jobs para `0aec21e`: Android (testes unitários, lint, APK, verificação de assinatura e checksum) e Windows x64 (compilação, testes fake-ADB/processo, ZIP). A revisão posterior altera documentação apenas. Não houve teste físico.

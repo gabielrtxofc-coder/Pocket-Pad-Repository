@@ -1,5 +1,7 @@
 # Missão 03 — resultado parcial e validação
 
+> Registro histórico da Missão 03. Para mudanças e CI posteriores, consulte [REMEDIACAO_03_1.md](REMEDIACAO_03_1.md).
+
 ## Comparação
 
 | Área | Antes | Alteração nesta missão | Estado |
