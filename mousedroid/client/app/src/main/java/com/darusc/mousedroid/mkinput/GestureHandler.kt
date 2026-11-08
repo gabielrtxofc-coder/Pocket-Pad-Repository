@@ -21,6 +21,9 @@ class GestureHandler(
     private val sendInputCallback: (InputEvent) -> (Unit)
 ) : View.OnTouchListener {
 
+    private val preferences = context.getSharedPreferences("touchpad_preferences", Context.MODE_PRIVATE)
+    private val pointerMotion = PointerMotion()
+    private var lastMoveTime = 0L
     private val TAG = "Mousedroid"
     private val EV_DELAY_MILLIS: Long = 150
     private val SCROLL_TRESHOLD = 2.0f
@@ -84,7 +87,7 @@ class GestureHandler(
                 // Post a runnable that sends a click event after a set delay
                 // onDoubleTap will cancel it when called
                 singleTapRunnable = Runnable {
-                    sendInputCallback(InputEvent.MouseClick(InputEvent.MouseButton.LEFT))
+                    if (preferences.getBoolean("tap_click", true)) sendInputCallback(InputEvent.MouseClick(InputEvent.MouseButton.LEFT))
                 }
                 handler.postDelayed(singleTapRunnable!!, EV_DELAY_MILLIS)
                 return super.onSingleTapUp(e)
@@ -138,26 +141,27 @@ class GestureHandler(
                         sendInputCallback(
                             InputEvent.MouseScroll(
                                 0,
-                                -distanceY.toInt().coerceIn(-128, 127)
+                                (-distanceY * preferences.getInt("scroll_speed", 100) / 100f).toInt().coerceIn(-127, 127)
                             )
                         )
                     } else {
                         // Horizontal scrolling
                         sendInputCallback(
                             InputEvent.MouseScroll(
-                                -distanceX.toInt().coerceIn(-128, 127), 0
+                                (-distanceX * preferences.getInt("scroll_speed", 100) / 100f).toInt().coerceIn(-127, 127), 0
                             )
                         )
                     }
                 } else {
-                    // We consider to be just moving if there is 1 pointer in both events
-                    sendInputCallback(
-                        InputEvent.MouseMove(
-                            distanceX.toInt().coerceIn(-128, 127),
-                            distanceY.toInt().coerceIn(-128, 127),
-                            state.activeMouseWhileDragging
-                        )
-                    )
+                    // Preserve fractional deltas and use event time, not wall-clock time.
+                    val elapsed = if (lastMoveTime == 0L) 16L else e2.eventTime - lastMoveTime
+                    lastMoveTime = e2.eventTime
+                    val (dx, dy) = pointerMotion.move(distanceX, distanceY, elapsed,
+                        preferences.getInt("sensitivity", 100) / 100f,
+                        preferences.getInt("acceleration", 0) / 100f)
+                    if (dx != 0 || dy != 0) {
+                        sendInputCallback(InputEvent.MouseMove(dx, dy, state.activeMouseWhileDragging))
+                    }
                 }
 
                 return super.onScroll(e1, e2, distanceX, distanceY)
@@ -169,7 +173,29 @@ class GestureHandler(
     private var singleTapRunnable: Runnable? = null
     private var doubleTapRunnable: Runnable? = null
 
+    fun cancel() {
+        singleTapRunnable?.let { handler.removeCallbacks(it) }
+        doubleTapRunnable?.let { handler.removeCallbacks(it) }
+        if (state.dragging) sendInputCallback(InputEvent.MouseDragState(InputEvent.MouseButton.LEFT, false))
+        state.dragging = false
+        state.doublePress = false
+        state.scrolling = false
+        state.activeMouseWhileDragging = InputEvent.MouseButton.NONE
+        pointerMotion.reset()
+        lastMoveTime = 0L
+    }
+
     override fun onTouch(p0: View?, p1: MotionEvent?): Boolean {
+        if (p1?.actionMasked == MotionEvent.ACTION_DOWN) {
+            pointerMotion.reset()
+            lastMoveTime = 0L
+        }
+        if (p1?.actionMasked == MotionEvent.ACTION_CANCEL) {
+            gestureDetector.onTouchEvent(p1)
+            scaleDetector.onTouchEvent(p1)
+            cancel()
+            return true
+        }
 
         if (p1?.actionMasked == MotionEvent.ACTION_POINTER_UP && p1.pointerCount == 2) {
             if (state.scrolling) {
@@ -180,7 +206,7 @@ class GestureHandler(
                 // Right click is detected when there are 2 pointers and 1 starts to lift
                 // Can't be detected in onSingleTapUp because the 2 pointers are not lifted at the same time
                 // so we don't get that event with 2 pointers but rather 2 different events with 1 pointer
-                sendInputCallback(InputEvent.MouseClick(InputEvent.MouseButton.RIGHT))
+                if (preferences.getBoolean("two_finger_click", true)) sendInputCallback(InputEvent.MouseClick(InputEvent.MouseButton.RIGHT))
             }
         }
 

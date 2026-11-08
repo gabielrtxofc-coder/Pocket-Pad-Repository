@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - arena/877c740f-pocket-pad-repository
+      - arena/f051f6d9-pocket-pad-repository
     paths:
       - ".github/workflows/baseline-build.yml"
       - "mousedroid/client/**"
