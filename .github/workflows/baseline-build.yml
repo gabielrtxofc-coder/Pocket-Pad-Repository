@@ -137,8 +137,15 @@ jobs:
               throw "vcpkg bootstrap failed with exit code $bootstrapExit."
             }
             $phase = "install asio and wxwidgets"
-            & (Join-Path $vcpkgRoot 'vcpkg.exe') install asio:x64-windows-static wxwidgets:x64-windows-static
-            if ($LASTEXITCODE -ne 0) { throw 'vcpkg dependency installation failed.' }
+            $installLog = Join-Path $env:RUNNER_TEMP 'vcpkg-install.log'
+            & (Join-Path $vcpkgRoot 'vcpkg.exe') install asio:x64-windows-static wxwidgets:x64-windows-static 2>&1 | Tee-Object -FilePath $installLog
+            $installExit = $LASTEXITCODE
+            if ($installExit -ne 0) {
+              $diagnostics = (Get-Content -LiteralPath $installLog | Select-Object -Last 35) -join ' | '
+              $escaped = $diagnostics.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=vcpkg installation output::$escaped"
+              throw "vcpkg dependency installation failed with exit code $installExit."
+            }
             "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           } catch {
             $message = "phase=$phase; error=$($_.Exception.Message)".Replace("%", "%25").Replace("`r", "%0D").Replace("`n", "%0A")
