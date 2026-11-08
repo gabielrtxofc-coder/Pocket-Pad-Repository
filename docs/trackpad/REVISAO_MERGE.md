@@ -15,7 +15,7 @@ Contra a base solicitada `d35c3cf`, a Missão 03 altera a tela do touchpad, seu 
 - A própria missão permanece parcial: detecção de pinça, rolagem e clique de dois dedos pode conflitar, sem testes automatizados de interação; Bluetooth pode descartar rolagens pequenas. A opção de toque simples não desabilita toque duplo/arraste.
 - `PointerMotion` retém deslocamentos acima de 127 até outro evento: após um movimento muito grande, um evento posterior na direção oposta pode continuar transmitindo movimento anterior; ao terminar o gesto, o restante é descartado. Teste atual verifica a retenção, não a naturalidade ou reversão. Requer correção e testes antes de declarar precisão/consistência aprovadas.
 - Ausência de testes instrumentados para configurações, lifecycle e cancelamento; nenhuma verificação física de USB, gestos, ergonomia e comportamento em Windows/Linux. Consulte a matriz em `RESULTADO.md`.
-- A opção de UI “Toque para clicar” refere-se somente ao clique simples, não a todo toque. A UI e a implementação devem ser alinhadas antes de considerá-la inequívoca.
+- A opção foi renomeada para “Toque simples para clicar”; duplo toque/arraste continua habilitado, conforme documentado. A confirmação visual ainda depende de teste instrumentado ou físico.
 - Não há teste novo para demonstrar ausência de regressões de gestos simultâneos; sucesso do CI não equivale à conclusão dos critérios de experiência. Recomenda-se manter o PR em rascunho até resolver esses pontos e revisar também a base herdada.
 
 Nenhum merge foi feito ou autorizado. A revisão não declara a missão pronta para merge.

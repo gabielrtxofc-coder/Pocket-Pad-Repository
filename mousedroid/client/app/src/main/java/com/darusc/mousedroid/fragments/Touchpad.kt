@@ -118,7 +118,7 @@ class Touchpad : Fragment() {
         slider("Sensibilidade", "sensitivity", 100, 25, 200)
         slider("Aceleração", "acceleration", 0, 0, 100)
         slider("Velocidade de rolagem", "scroll_speed", 100, 25, 200)
-        toggle("Toque para clicar", "tap_click")
+        toggle("Toque simples para clicar", "tap_click")
         toggle("Toque com dois dedos para clique direito", "two_finger_click")
         AlertDialog.Builder(context).setTitle("Configurações do touchpad").setView(content)
             .setNegativeButton("Cancelar", null)
