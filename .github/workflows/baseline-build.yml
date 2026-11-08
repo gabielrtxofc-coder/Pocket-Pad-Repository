@@ -131,7 +131,7 @@ jobs:
             & (Join-Path $vcpkgRoot 'bootstrap-vcpkg.bat') -disableMetrics 2>&1 | Tee-Object -FilePath $bootstrapLog
             $bootstrapExit = $LASTEXITCODE
             if ($bootstrapExit -ne 0) {
-              $lastLines = (Get-Content -LiteralPath $bootstrapLog | Select-Object -Last 12) -join ' | '
+              $lastLines = (Get-Content -LiteralPath $bootstrapLog | Where-Object { $_ -match 'error|fail|download|http|403|429|TLS|denied|exception' } | Select-Object -First 20) -join ' | '
               $escaped = $lastLines.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
               Write-Output "::error title=vcpkg bootstrap output::$escaped"
               throw "vcpkg bootstrap failed with exit code $bootstrapExit."
